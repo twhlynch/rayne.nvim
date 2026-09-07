@@ -3,6 +3,12 @@ local M = {}
 --- @class Rayne.Options plugin options
 local options = {
 	engine_path = vim.fn.getcwd() .. "/../../Rayne",
+	library_pattern = "^libRayne",
+	android = {
+		sdk_path = "~/Library/Android/sdk",
+		forward_port = 5039,
+		lldb_path = "/data/local/tmp/lldb-server",
+	},
 }
 
 --- sets plugin options keeping defaults where unspecified
