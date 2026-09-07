@@ -39,34 +39,71 @@ function M.launch_debug(pkg, activity)
 	return success
 end
 
+function M.kill_lldb_server()
+	vim.system({ "adb", "shell", "pkill", "-9", "-f", "lldb-server" }):wait()
+	vim.wait(500)
+end
+
+function M.remove_forward(port)
+	vim.system({ "adb", "forward", "--remove", "tcp:" .. port }):wait()
+end
+
 --- @param pkg string
 --- @param port number
---- @param lldb_path string
-function M.forward(pkg, port, lldb_path)
+--- @param lldb_server_path string
+--- @return boolean
+function M.start_lldb_server(pkg, port, lldb_server_path)
+	local tmp = "/data/local/tmp/lldb-server"
+	local app_dir = "/data/data/" .. pkg
+
+	-- push to temp location
+	vim.system({ "adb", "push", lldb_server_path, tmp }):wait()
+	vim.system({ "adb", "shell", "chmod", "755", tmp }):wait()
+
+	-- Copy into apps private dir
+	vim.system({ "adb", "shell", "run-as", pkg, "cp", tmp, app_dir .. "/lldb-server" }):wait()
+	vim.system({ "adb", "shell", "run-as", pkg, "chmod", "700", app_dir .. "/lldb-server" }):wait()
+
+	-- start platform server as the app user
 	vim.fn.jobstart({
 		"adb",
 		"shell",
 		"run-as",
 		pkg,
-		lldb_path,
+		app_dir .. "/lldb-server",
 		"platform",
-		"--listen",
-		"unix-abstract:///" .. pkg .. "/lldb-server-sock",
 		"--server",
+		"--listen",
+		"*:" .. tostring(port),
 	}, { detach = true })
 
-	local target = "localabstract:" .. pkg .. "/lldb-server-sock"
-
+	-- forward the port
 	local deadline = vim.loop.now() + 5000
 	while vim.loop.now() < deadline do
-		local result = vim.system({ "adb", "forward", "tcp:" .. port, target }):wait()
-		if result.code == 0 then
+		local fwd = vim.system({ "adb", "forward", "tcp:" .. port, "tcp:" .. port }):wait()
+		if fwd.code == 0 then
 			return true
 		end
 		vim.wait(50)
 	end
 
-	vim.notify("Timed out waiting for LLDB server forward", vim.log.levels.ERROR)
+	vim.notify("Timed out waiting for lldb-server forward", vim.log.levels.ERROR)
+	return false
+end
+
+--- @param port number
+--- @return boolean
+function M.forward_port(port)
+	local deadline = vim.loop.now() + 5000
+	while vim.loop.now() < deadline do
+		local fwd = vim.system({ "adb", "forward", "tcp:" .. port, "tcp:" .. port }):wait()
+		if fwd.code == 0 then
+			return true
+		end
+		vim.wait(50)
+	end
+
+	vim.notify("Timed out waiting for port forward", vim.log.levels.ERROR)
 	return false
 end
 
@@ -90,6 +127,30 @@ function M.get_pid(pkg)
 	end
 
 	return pid
+end
+
+--- @param port number
+--- @param timeout_ms integer
+function M.wait_for_port(port, timeout_ms)
+	timeout_ms = timeout_ms or 5000
+	local waited = 0
+	local interval = 100
+
+	while waited < timeout_ms do
+		local sock = vim.loop.new_tcp()
+		if sock then
+			local _, err = sock:connect("127.0.0.1", port, function(_) end)
+			sock:close()
+			if not err then
+				return true
+			end
+		end
+		vim.wait(interval)
+		waited = waited + interval
+	end
+
+	vim.notify("Timed out waiting for lldb-server on port " .. port, vim.log.levels.ERROR)
+	return false
 end
 
 --- @param pkg string

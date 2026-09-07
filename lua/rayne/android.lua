@@ -6,27 +6,6 @@ local utils = require("rayne.utils")
 
 local M = {}
 
-local function start_lldb_server(pkg)
-	local opts = options.get()
-
-	local lldb_server_path = lldb.find_server(opts.android.sdk_path)
-	if not lldb_server_path then
-		return false
-	end
-
-	local success = adb.push(lldb_server_path, opts.android.lldb_path)
-	if not success then
-		return false
-	end
-
-	success = adb.forward(pkg, opts.android.forward_port, opts.android.lldb_path)
-	if not success then
-		return false
-	end
-
-	return true
-end
-
 local function pick_android_so(search_root)
 	return utils.await(function(callback)
 		utils.pick_files({
@@ -65,28 +44,9 @@ local function resolve_main_so()
 	return pick_android_so(so_search_root)
 end
 
-local function build_extra_symbol_commands(main_so_path)
-	local opts = options.get()
-
-	local dir = vim.fn.fnamemodify(main_so_path, ":h")
-	local siblings = utils.find("*.so", { directory = dir, maxdepth = 1, insensitive = true })
-
-	local commands = {}
-	for _, path in ipairs(siblings) do
-		local base = vim.fn.fnamemodify(path, ":t")
-		if path ~= main_so_path then
-			if base:match(opts.library_pattern) then
-				table.insert(commands, "target symbols add " .. path)
-			end
-		end
-	end
-
-	return commands
-end
-
-local function build_and_install(project_dir)
+local function run_gradle(project_dir, commands)
 	return utils.await(function(done)
-		local cmd = { "bash", "-c", "cd " .. project_dir .. " && ./gradlew assembleDebug installDebug" }
+		local cmd = { "bash", "-c", "cd " .. project_dir .. " && ./gradlew " .. table.concat(commands, " ") }
 
 		local term = Snacks.terminal.open(cmd, {
 			win = { position = "bottom", height = 0.35 },
@@ -104,33 +64,67 @@ local function build_and_install(project_dir)
 	end)
 end
 
-local function do_attach(pid)
-	local package_name = build_config.get_package_name()
+local function build_and_install(project_dir)
+	return run_gradle(project_dir, { "assembleDebug", "installDebug" })
+end
 
-	if not start_lldb_server(package_name) then
+local function build(project_dir)
+	return run_gradle(project_dir, { "assembleDebug" })
+end
+
+local function setup_server_and_attach(pid)
+	local package_name = build_config.get_package_name()
+	local opts = options.get()
+	local port = opts.android.forward_port
+
+	-- Kill any existing server
+	adb.kill_lldb_server()
+	adb.remove_forward(port)
+	vim.wait(300)
+
+	-- Find lldb-server
+	local lldb_server_path = lldb.find_server(opts.android.sdk_path)
+	if not lldb_server_path then
 		return
 	end
 
+	-- Start lldb-server (copies to app dir, runs with run-as)
+	if not adb.start_lldb_server(package_name, port, lldb_server_path) then
+		return
+	end
+
+	-- Wait for port to be ready
+	if not adb.wait_for_port(port, 5000) then
+		return
+	end
+
+	-- Find the .so for symbols
 	local so_path = resolve_main_so()
 	if not so_path then
 		return
 	end
 
-	local attach_commands = {
-		"platform select remote-android",
-		"platform connect connect://localhost:" .. options.get().android.forward_port,
-	}
-	vim.list_extend(attach_commands, build_extra_symbol_commands(so_path))
-
-	lldb.attach({
+	-- Attach via DAP
+	lldb.attach_android({
 		name = "Attach to Android native (" .. package_name .. ")",
 		pid = tonumber(pid) or 0,
-		commands = attach_commands,
+		port = port,
 		program = so_path,
 	})
 end
 
 -- MARK: Public
+
+function M.build()
+	utils.async(function()
+		local project_dir = build_config.get_android_project_dir()
+		if not utils.verify_directory(project_dir) then
+			return
+		end
+
+		build(project_dir)
+	end)
+end
 
 function M.build_install_launch()
 	utils.async(function()
@@ -166,7 +160,7 @@ function M.build_install_launch_attach()
 			return
 		end
 
-		if not adb.launch_debug(package_name, native_activity) then
+		if not adb.launch(package_name, native_activity) then
 			return
 		end
 
@@ -175,11 +169,11 @@ function M.build_install_launch_attach()
 			return
 		end
 
-		do_attach(pid)
+		setup_server_and_attach(pid)
 	end)
 end
 
-function M.attach_only()
+function M.attach()
 	utils.async(function()
 		local package_name = build_config.get_package_name()
 
@@ -188,7 +182,7 @@ function M.attach_only()
 			return
 		end
 
-		do_attach(pid)
+		setup_server_and_attach(pid)
 	end)
 end
 

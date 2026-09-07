@@ -4,6 +4,8 @@ local M = {}
 local options = {
 	engine_path = vim.fn.getcwd() .. "/../../Rayne",
 	library_pattern = "^libRayne",
+	--- @type string | nil
+	lldb_server_path = nil,
 	android = {
 		sdk_path = "~/Library/Android/sdk",
 		forward_port = 5039,
