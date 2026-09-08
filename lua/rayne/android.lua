@@ -157,6 +157,55 @@ local function setup_server_and_attach(pid)
 	})
 end
 
+local function get_clangd_compilation_database()
+	local clangd_path = vim.fn.getcwd() .. "/.clangd"
+	if vim.fn.filereadable(clangd_path) == 0 then
+		return nil
+	end
+
+	local lines = vim.fn.readfile(clangd_path)
+	for _, line in ipairs(lines) do
+		local path = line:match("^%s*CompilationDatabase:%s*(.+)%s*$")
+		if path then
+			return path
+		end
+	end
+
+	return nil
+end
+
+local function copy_compile_commands(project_dir)
+	local results = utils.find("compile_commands.json", {
+		directory = project_dir,
+		type = "f",
+	})
+
+	if #results == 0 then
+		return
+	end
+
+	local newest = results[1]
+	for i = 2, #results do
+		if vim.fn.getftime(results[i]) > vim.fn.getftime(newest) then
+			newest = results[i]
+		end
+	end
+
+	local cwd = vim.fn.getcwd()
+
+	local dest_dir = get_clangd_compilation_database()
+	if dest_dir then
+		vim.fn.mkdir(dest_dir, "p")
+	elseif vim.fn.isdirectory(cwd .. "/build") == 1 then
+		dest_dir = cwd .. "/build"
+	else
+		dest_dir = cwd
+	end
+
+	local dest = dest_dir .. "/compile_commands.json"
+	vim.fn.system({ "cp", newest, dest })
+end
+
 -- MARK: Public
 
 function M.generate(configuration)
@@ -211,7 +260,11 @@ function M.build()
 			return
 		end
 
-		build(project_dir)
+		if not build(project_dir) then
+			return
+		end
+
+		copy_compile_commands(project_dir)
 	end)
 end
 
@@ -228,6 +281,8 @@ function M.build_install_launch()
 		if not build_and_install(project_dir) then
 			return
 		end
+
+		copy_compile_commands(project_dir)
 
 		if not adb.launch(package_name, native_activity) then
 			return
@@ -248,6 +303,8 @@ function M.build_install_launch_attach()
 		if not build_and_install(project_dir) then
 			return
 		end
+
+		copy_compile_commands(project_dir)
 
 		if not adb.launch(package_name, native_activity) then
 			return
