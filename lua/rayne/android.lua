@@ -6,6 +6,19 @@ local utils = require("rayne.utils")
 
 local M = {}
 
+local function find_jdk()
+	-- try $JAVA_HOME first
+	local java_home = vim.env.JAVA_HOME
+	if java_home ~= nil then
+		return java_home
+	end
+
+	-- then use first from java_home
+	local jdk_path = vim.trim(vim.fn.system("/usr/libexec/java_home 2>/dev/null"))
+
+	return #jdk_path ~= 0 and jdk_path or nil
+end
+
 local function pick_android_so(search_root)
 	return utils.await(function(callback)
 		utils.pick_files({
@@ -46,7 +59,11 @@ end
 
 local function run_gradle(project_dir, commands)
 	return utils.await(function(done)
-		local cmd = { "bash", "-c", "cd " .. project_dir .. " && ./gradlew " .. table.concat(commands, " ") }
+		local jdk_path = find_jdk()
+		local java_env = jdk_path and "JAVA_HOME=" .. jdk_path .. " " or ""
+
+		-- no-daemon since it can sometimes use a daemon of a different version
+		local cmd = { "bash", "-c", java_env .. "cd " .. project_dir .. " && ./gradlew --no-daemon " .. table.concat(commands, " ") }
 
 		local term = Snacks.terminal.open(cmd, {
 			win = { position = "bottom", height = 0.35 },
@@ -64,12 +81,39 @@ local function run_gradle(project_dir, commands)
 	end)
 end
 
+local function sync(project_dir)
+	return run_gradle(project_dir, { "prepareKotlinBuildScriptModel" })
+end
+
 local function build_and_install(project_dir)
 	return run_gradle(project_dir, { "assembleDebug", "installDebug" })
 end
 
 local function build(project_dir)
 	return run_gradle(project_dir, { "assembleDebug" })
+end
+
+local function run_create_build_project(args)
+	return utils.await(function(done)
+		local jdk_path = find_jdk()
+		local java_env = jdk_path and "JAVA_HOME=" .. jdk_path .. " " or ""
+
+		local cmd = { "bash", "-c", java_env .. "python3 " .. table.concat(args, " ") }
+
+		local term = Snacks.terminal.open(cmd, {
+			win = { position = "bottom", height = 0.35 },
+			auto_close = false,
+		})
+
+		vim.api.nvim_create_autocmd("TermClose", {
+			buffer = term.buf,
+			once = true,
+			callback = function()
+				local exit_code = vim.v.event and vim.v.event.status or 0
+				done(exit_code == 0)
+			end,
+		})
+	end)
 end
 
 local function setup_server_and_attach(pid)
@@ -114,6 +158,51 @@ local function setup_server_and_attach(pid)
 end
 
 -- MARK: Public
+
+function M.generate(configuration)
+	utils.async(function()
+		local config = build_config.get_build_config()
+		if not config then
+			return
+		end
+
+		local opts = options.get()
+		local script_path = opts.engine_path .. "/Tools/BuildHelper/CreateBuildProject.py"
+		local build_config_path = build_config.get_build_config_path()
+
+		if not utils.verify_file(script_path) then
+			return
+		end
+
+		local args = { script_path, build_config_path, "android", configuration or "oculus" }
+
+		if not run_create_build_project(args) then
+			vim.notify("Android project generation failed", vim.log.levels.ERROR)
+			return
+		end
+
+		local project_dir = build_config.get_android_project_dir()
+		if not utils.verify_directory(project_dir) then
+			return
+		end
+
+		if not sync(project_dir) then
+			vim.notify("Android project sync failed", vim.log.levels.ERROR)
+			return
+		end
+	end)
+end
+
+function M.sync()
+	utils.async(function()
+		local project_dir = build_config.get_android_project_dir()
+		if not utils.verify_directory(project_dir) then
+			return
+		end
+
+		sync(project_dir)
+	end)
+end
 
 function M.build()
 	utils.async(function()

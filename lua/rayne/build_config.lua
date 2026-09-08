@@ -39,7 +39,7 @@ local build_config = nil
 
 local config_file_name = "build-config.json"
 
-local function get_build_config_path()
+function M.get_build_config_path()
 	return vim.fn.getcwd() .. "/" .. config_file_name
 end
 
@@ -68,7 +68,7 @@ function M.get_build_config()
 		return build_config
 	end
 
-	local filepath = get_build_config_path()
+	local filepath = M.get_build_config_path()
 	build_config = utils.load_json_file(filepath)
 
 	if not validate() then
