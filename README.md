@@ -4,7 +4,12 @@ Tooling for using nvim for [Rayne](https://github.com/Überpixel/Rayne) projects
 
 ## Features
 
-- Android project debug adapter runner.
+- Generate project
+- Build project
+- Launch project
+- Attach lldb to project
+- Run and debug Android builds
+- Update compile commands in the background
 
 ## Usage
 
