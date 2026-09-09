@@ -6,6 +6,7 @@ local options = {
 	library_pattern = "^libRayne",
 	--- @type string | nil
 	lldb_server_path = nil,
+	snippets = true,
 	android = {
 		sdk_path = "~/Library/Android/sdk",
 		forward_port = 5039,
