@@ -1,5 +1,6 @@
 local adb = require("rayne.adb")
 local build_config = require("rayne.build_config")
+local build_secrets = require("rayne.build_secrets")
 local lldb = require("rayne.lldb")
 local options = require("rayne.options")
 local utils = require("rayne.utils")
@@ -91,6 +92,28 @@ end
 
 local function build(project_dir)
 	return run_gradle(project_dir, { "assembleDebug" })
+end
+
+local function build_release(project_dir)
+	return run_gradle(project_dir, { "assembleRelease" })
+end
+
+local function find_apksigner()
+	local sdk_path = options.get().android.sdk_path
+	local build_tools_dir = sdk_path .. "/build-tools"
+
+	local results = utils.find("apksigner", {
+		directory = build_tools_dir,
+		type = "f",
+	})
+
+	if #results == 0 then
+		return nil
+	end
+
+	-- prefer newest version
+	table.sort(results)
+	return results[#results]
 end
 
 local function run_create_build_project(args)
@@ -204,6 +227,61 @@ local function copy_compile_commands(project_dir)
 
 	local dest = dest_dir .. "/compile_commands.json"
 	vim.fn.system({ "cp", newest, dest })
+end
+
+--- @param unsigned_apk string
+--- @param signed_apk string
+local function sign_apk(unsigned_apk, signed_apk)
+	local store_password, key_password = build_secrets.get_keystore_passwords()
+	if not store_password or not key_password then
+		return false
+	end
+
+	local keystore = (build_config.get_build_config() or {})["keystore~android"]
+	if keystore then
+		keystore = vim.fn.getcwd() .. "/" .. keystore
+	else
+		keystore = vim.fn.getcwd() .. "/keystore"
+	end
+
+	if not utils.verify_file(keystore) then
+		return false
+	end
+
+	local apksigner = find_apksigner()
+	if not apksigner then
+		vim.notify("apksigner not found in Android SDK build-tools", vim.log.levels.ERROR)
+		return false
+	end
+
+	local sign_result = vim.system({
+		apksigner,
+		"sign",
+		"--ks",
+		keystore,
+		"--ks-key-alias",
+		"key0",
+		"--ks-pass",
+		"pass:" .. store_password,
+		"--key-pass",
+		"pass:" .. key_password,
+		"--out",
+		signed_apk,
+		unsigned_apk,
+	}):wait()
+
+	if sign_result.code ~= 0 then
+		vim.notify("Failed to sign APK: " .. (sign_result.stderr or ""), vim.log.levels.ERROR)
+		return false
+	end
+
+	local verify_result = vim.system({ apksigner, "verify", signed_apk }):wait()
+	if verify_result.code ~= 0 then
+		vim.notify("APK signature verification failed: " .. (verify_result.stderr or ""), vim.log.levels.ERROR)
+		return false
+	end
+
+	return true
 end
 
 -- MARK: Public
@@ -329,6 +407,59 @@ function M.attach()
 		end
 
 		setup_server_and_attach(pid)
+	end)
+end
+
+function M.build_install_launch_release()
+	utils.async(function()
+		local project_dir = build_config.get_android_project_dir()
+		if not utils.verify_directory(project_dir) then
+			return
+		end
+
+		-- build release
+		if not build_release(project_dir) then
+			return
+		end
+
+		-- sign APK
+		local release_dir = build_config.get_release_directory()
+		local unsigned_apk = project_dir .. "/app/build/outputs/apk/release/app-release-unsigned.apk"
+		local signed_apk = release_dir .. "/app-release.apk"
+
+		vim.fn.mkdir(release_dir, "p")
+
+		-- copy symbols for publish
+		local symbols_search_root = project_dir .. "/app/.cxx/Release/"
+		local symbols_dir = release_dir .. "/symbols"
+		vim.fn.mkdir(symbols_dir, "p")
+
+		local symbols = utils.find("*.so", {
+			directory = symbols_search_root,
+			type = "f",
+		})
+		for _, file in ipairs(symbols) do
+			if file:find("/arm64-v8a/") then
+				vim.uv.fs_copyfile(file, symbols_dir .. "/" .. vim.fn.fnamemodify(file, ":t"))
+			end
+		end
+
+		sign_apk(unsigned_apk, signed_apk)
+		vim.uv.fs_copyfile(signed_apk, release_dir .. "/" .. signed_apk)
+
+		local package_name = build_config.get_package_name()
+		local native_activity = build_config.get_native_activity()
+
+		adb.uninstall(package_name)
+
+		local success = adb.install(signed_apk)
+		if not success then
+			return
+		end
+
+		if not adb.launch(package_name, native_activity) then
+			return
+		end
 	end)
 end
 

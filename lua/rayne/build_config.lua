@@ -118,4 +118,8 @@ function M.get_so_search_root()
 	return M.get_android_project_dir() .. "/app/build/intermediates/cxx/Debug"
 end
 
+function M.get_release_directory()
+	return M.get_android_project_dir() .. "/" .. ((M.get_build_config() or {})["release-directory"] or "Releases")
+end
+
 return M

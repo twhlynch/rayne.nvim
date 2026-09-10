@@ -173,4 +173,21 @@ function M.wait_for_pid(pkg, timeout_ms)
 	return nil
 end
 
+--- @param apk string
+function M.install(apk)
+	local result = vim.system({ "adb", "install", apk }):wait()
+
+	local success = result.code == 0
+	if not success then
+		vim.notify("Failed to install: " .. (result.stderr or ""), vim.log.levels.ERROR)
+	end
+
+	return success
+end
+
+--- @param pkg string
+function M.uninstall(pkg)
+	vim.system({ "adb", "uninstall", pkg }):wait()
+end
+
 return M
