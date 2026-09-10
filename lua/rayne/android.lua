@@ -463,4 +463,91 @@ function M.build_install_launch_release()
 	end)
 end
 
+function M.upload_quest_build()
+	utils.async(function()
+		local project_dir = build_config.get_android_project_dir()
+		if not utils.verify_directory(project_dir) then
+			return
+		end
+
+		local release_dir = build_config.get_release_directory()
+
+		local apk_path = utils.await(function(callback)
+			utils.pick_files({
+				source = "apk",
+				title = "APK to upload",
+				cmd = { "find", release_dir, "-type", "f", "-iname", "*.apk" },
+				error = "No APK files found in " .. release_dir,
+			}, callback)
+		end)
+		if not apk_path then
+			return
+		end
+
+		local channel = utils.await(function(callback)
+			utils.pick({
+				source = "channel",
+				title = "Release Channel",
+				items = { "LIVE", "RC", "BETA", "ALPHA" },
+			}, callback)
+		end)
+		if not channel then
+			return
+		end
+
+		-- confirm before uploading
+		local confirm = utils.await(function(callback)
+			utils.confirm({
+				prompt = "Upload APK to " .. channel .. "?",
+				yes = "Upload" .. apk_path,
+				no = "Cancel",
+			}, callback)
+		end)
+		if not confirm then
+			return
+		end
+
+		local secrets = build_secrets.get_oculus_app_secrets("quest")
+		if not secrets then
+			return
+		end
+
+		local app_id = secrets["app-id"]
+		local app_secret = secrets["secret"]
+
+		local cmd = {
+			"ovr-platform-util",
+			"upload-quest-build",
+			"--app-id",
+			app_id,
+			"--app-secret",
+			app_secret,
+			"--apk",
+			apk_path,
+			"--channel",
+			channel,
+			"--age-group",
+			"TEENS_AND_ADULTS",
+			"--debug_symbols_dir",
+			release_dir .. "/symbols",
+		}
+
+		local term = Snacks.terminal.open(cmd, {
+			win = { position = "bottom", height = 0.35 },
+			auto_close = false,
+		})
+
+		vim.api.nvim_create_autocmd("TermClose", {
+			buffer = term.buf,
+			once = true,
+			callback = function()
+				local exit_code = vim.v.event and vim.v.event.status or 0
+				if exit_code ~= 0 then
+					vim.notify("Upload failed", vim.log.levels.ERROR)
+				end
+			end,
+		})
+	end)
+end
+
 return M

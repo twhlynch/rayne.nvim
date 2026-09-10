@@ -41,7 +41,7 @@ end
 --- @field source string
 --- @field title string
 --- @field cmd string[]
---- @field error string[]
+--- @field error string
 
 --- @param opts Rayne.pick_files_opts
 function M.pick_files(opts, callback)
@@ -73,6 +73,49 @@ function M.pick_files(opts, callback)
 			end
 		end,
 	})
+end
+
+--- @class Rayne.pick_string_opts
+--- @field source string
+--- @field title string
+--- @field items string[]
+
+--- @param opts Rayne.pick_string_opts
+function M.pick(opts, callback)
+	Snacks.picker.pick({
+		source = opts.source,
+		title = opts.title,
+
+		finder = function()
+			local items = {}
+			for _, item in ipairs(opts.items) do
+				items[#items + 1] = { text = item, file = item }
+			end
+			return items
+		end,
+
+		confirm = function(picker, item)
+			picker:close()
+			if item then
+				callback(item.file)
+			end
+		end,
+	})
+end
+
+--- @class Rayne.confirm_opts
+--- @field prompt string
+--- @field yes string
+--- @field no string
+
+---@param opts Rayne.confirm_opts
+---@param callback fun(confirmed: boolean)
+function M.confirm(opts, callback)
+	vim.ui.select({ opts.yes, opts.no }, {
+		prompt = opts.prompt,
+	}, function(choice)
+		callback(choice == opts.yes)
+	end)
 end
 
 --- @class Rayne.find_opts
