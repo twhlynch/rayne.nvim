@@ -11,6 +11,10 @@ function M.setup(opts)
 			require("rayne.snippets").setup()
 		end
 	end
+
+	if options.get().manifest_completion then
+		require("rayne.manifest_completion").setup()
+	end
 end
 
 return M
