@@ -100,7 +100,7 @@ end
 
 local function find_apksigner()
 	local sdk_path = options.get().android.sdk_path
-	local build_tools_dir = sdk_path .. "/build-tools"
+	local build_tools_dir = vim.fn.expand(sdk_path .. "/build-tools")
 
 	local results = utils.find("apksigner", {
 		directory = build_tools_dir,
@@ -245,6 +245,7 @@ local function sign_apk(unsigned_apk, signed_apk)
 	end
 
 	if not utils.verify_file(keystore) then
+		vim.notify(keystore .. " not found", vim.log.levels.ERROR)
 		return false
 	end
 
@@ -254,21 +255,28 @@ local function sign_apk(unsigned_apk, signed_apk)
 		return false
 	end
 
-	local sign_result = vim.system({
-		apksigner,
-		"sign",
-		"--ks",
-		keystore,
-		"--ks-key-alias",
-		"key0",
-		"--ks-pass",
-		"pass:" .. store_password,
-		"--key-pass",
-		"pass:" .. key_password,
-		"--out",
-		signed_apk,
-		unsigned_apk,
-	}):wait()
+	local sign_result = utils.await(function(done)
+		vim.system({
+			apksigner,
+			"sign",
+			"--ks",
+			keystore,
+			"--ks-key-alias",
+			"key0",
+			"--ks-pass",
+			"pass:" .. store_password,
+			"--key-pass",
+			"pass:" .. key_password,
+			"--out",
+			signed_apk,
+			unsigned_apk,
+		}, {
+			stdout = true,
+			stderr = true,
+		}, function(result)
+			done(result)
+		end)
+	end)
 
 	if sign_result.code ~= 0 then
 		vim.notify("Failed to sign APK: " .. (sign_result.stderr or ""), vim.log.levels.ERROR)
@@ -439,13 +447,15 @@ function M.build_install_launch_release()
 			type = "f",
 		})
 		for _, file in ipairs(symbols) do
-			if file:find("/arm64-v8a/") then
+			if file:find("/arm64-v8a/", 1, true) then
 				vim.uv.fs_copyfile(file, symbols_dir .. "/" .. vim.fn.fnamemodify(file, ":t"))
 			end
 		end
 
-		sign_apk(unsigned_apk, signed_apk)
-		vim.uv.fs_copyfile(signed_apk, release_dir .. "/" .. signed_apk)
+		local signed = sign_apk(unsigned_apk, signed_apk)
+		if not signed then
+			return
+		end
 
 		local package_name = build_config.get_package_name()
 		local native_activity = build_config.get_native_activity()
@@ -499,7 +509,7 @@ function M.upload_quest_build()
 		local confirm = utils.await(function(callback)
 			utils.confirm({
 				prompt = "Upload APK to " .. channel .. "?",
-				yes = "Upload" .. apk_path,
+				yes = "Upload " .. apk_path,
 				no = "Cancel",
 			}, callback)
 		end)
