@@ -136,6 +136,7 @@ function M.find(name, opts)
 	end
 
 	if opts.type ~= nil then
+		table.insert(cmd, "-type")
 		table.insert(cmd, opts.type)
 	end
 
