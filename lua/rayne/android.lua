@@ -255,35 +255,30 @@ local function sign_apk(unsigned_apk, signed_apk)
 		return false
 	end
 
-	local sign_result = utils.await(function(done)
-		vim.system({
-			apksigner,
-			"sign",
-			"--ks",
-			keystore,
-			"--ks-key-alias",
-			"key0",
-			"--ks-pass",
-			"pass:" .. store_password,
-			"--key-pass",
-			"pass:" .. key_password,
-			"--out",
-			signed_apk,
-			unsigned_apk,
-		}, {
-			stdout = true,
-			stderr = true,
-		}, function(result)
-			done(result)
-		end)
-	end)
-
+	local sign_result = utils.async_system({
+		apksigner,
+		"sign",
+		"--ks",
+		keystore,
+		"--ks-key-alias",
+		"key0",
+		"--ks-pass",
+		"pass:" .. store_password,
+		"--key-pass",
+		"pass:" .. key_password,
+		"--out",
+		signed_apk,
+		unsigned_apk,
+	}, {
+		stdout = true,
+		stderr = true,
+	})
 	if sign_result.code ~= 0 then
 		vim.notify("Failed to sign APK: " .. (sign_result.stderr or ""), vim.log.levels.ERROR)
 		return false
 	end
 
-	local verify_result = vim.system({ apksigner, "verify", signed_apk }):wait()
+	local verify_result = utils.async_system({ apksigner, "verify", signed_apk })
 	if verify_result.code ~= 0 then
 		vim.notify("APK signature verification failed: " .. (verify_result.stderr or ""), vim.log.levels.ERROR)
 		return false

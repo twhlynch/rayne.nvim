@@ -146,6 +146,15 @@ function M.find(name, opts)
 	return vim.fn.systemlist(cmd)
 end
 
+--- @param args string[]
+--- @param opts? vim.SystemOpts
+--- @return vim.SystemCompleted
+function M.async_system(args, opts)
+	return M.await(function(done)
+		vim.system(args, opts or {}, done)
+	end)
+end
+
 --- @generic T
 --- @param func fun(callback: fun(value: T))
 --- @return T

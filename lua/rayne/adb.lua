@@ -1,9 +1,11 @@
+local utils = require("rayne.utils")
+
 local M = {}
 
 --- @param source string
 --- @param dest string
 function M.push(source, dest)
-	local result = vim.system({ "adb", "push", source, dest }):wait()
+	local result = utils.async_system({ "adb", "push", source, dest })
 
 	local success = result.code == 0
 	if not success then
@@ -16,7 +18,7 @@ end
 ---@param pkg string
 ---@param activity string
 function M.launch(pkg, activity)
-	local result = vim.system({ "adb", "shell", "am", "start", "-n", pkg .. "/" .. activity }):wait()
+	local result = utils.async_system({ "adb", "shell", "am", "start", "-n", pkg .. "/" .. activity })
 
 	local success = result.code == 0
 	if not success then
@@ -29,7 +31,7 @@ end
 ---@param pkg string
 ---@param activity string
 function M.launch_debug(pkg, activity)
-	local result = vim.system({ "adb", "shell", "am", "start", "-D", "-n", pkg .. "/" .. activity }):wait()
+	local result = utils.async_system({ "adb", "shell", "am", "start", "-D", "-n", pkg .. "/" .. activity })
 
 	local success = result.code == 0
 	if not success then
@@ -40,12 +42,12 @@ function M.launch_debug(pkg, activity)
 end
 
 function M.kill_lldb_server()
-	vim.system({ "adb", "shell", "pkill", "-9", "-f", "lldb-server" }):wait()
+	utils.async_system({ "adb", "shell", "pkill", "-9", "-f", "lldb-server" })
 	vim.wait(500)
 end
 
 function M.remove_forward(port)
-	vim.system({ "adb", "forward", "--remove", "tcp:" .. port }):wait()
+	utils.async_system({ "adb", "forward", "--remove", "tcp:" .. port })
 end
 
 --- @param pkg string
@@ -57,12 +59,12 @@ function M.start_lldb_server(pkg, port, lldb_server_path)
 	local app_dir = "/data/data/" .. pkg
 
 	-- push to temp location
-	vim.system({ "adb", "push", lldb_server_path, tmp }):wait()
-	vim.system({ "adb", "shell", "chmod", "755", tmp }):wait()
+	utils.async_system({ "adb", "push", lldb_server_path, tmp })
+	utils.async_system({ "adb", "shell", "chmod", "755", tmp })
 
 	-- Copy into apps private dir
-	vim.system({ "adb", "shell", "run-as", pkg, "cp", tmp, app_dir .. "/lldb-server" }):wait()
-	vim.system({ "adb", "shell", "run-as", pkg, "chmod", "700", app_dir .. "/lldb-server" }):wait()
+	utils.async_system({ "adb", "shell", "run-as", pkg, "cp", tmp, app_dir .. "/lldb-server" })
+	utils.async_system({ "adb", "shell", "run-as", pkg, "chmod", "700", app_dir .. "/lldb-server" })
 
 	-- start platform server as the app user
 	vim.fn.jobstart({
@@ -80,7 +82,7 @@ function M.start_lldb_server(pkg, port, lldb_server_path)
 	-- forward the port
 	local deadline = vim.loop.now() + 5000
 	while vim.loop.now() < deadline do
-		local fwd = vim.system({ "adb", "forward", "tcp:" .. port, "tcp:" .. port }):wait()
+		local fwd = utils.async_system({ "adb", "forward", "tcp:" .. port, "tcp:" .. port })
 		if fwd.code == 0 then
 			return true
 		end
@@ -96,7 +98,7 @@ end
 function M.forward_port(port)
 	local deadline = vim.loop.now() + 5000
 	while vim.loop.now() < deadline do
-		local fwd = vim.system({ "adb", "forward", "tcp:" .. port, "tcp:" .. port }):wait()
+		local fwd = utils.async_system({ "adb", "forward", "tcp:" .. port, "tcp:" .. port })
 		if fwd.code == 0 then
 			return true
 		end
@@ -175,7 +177,7 @@ end
 
 --- @param apk string
 function M.install(apk)
-	local result = vim.system({ "adb", "install", apk }):wait()
+	local result = utils.async_system({ "adb", "install", apk })
 
 	local success = result.code == 0
 	if not success then
@@ -187,7 +189,7 @@ end
 
 --- @param pkg string
 function M.uninstall(pkg)
-	vim.system({ "adb", "uninstall", pkg }):wait()
+	utils.async_system({ "adb", "uninstall", pkg })
 end
 
 return M
