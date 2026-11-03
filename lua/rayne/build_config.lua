@@ -95,7 +95,7 @@ function M.get_native_activity()
 		return "." .. vim.fn.fnamemodify(activity, ":t:r")
 	end
 
-	return ".NativeActivity"
+	return "android.app.NativeActivity"
 end
 
 function M.get_application_name()
