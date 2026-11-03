@@ -272,13 +272,16 @@ local function sign_apk(unsigned_apk, signed_apk)
 	}, {
 		stdout = true,
 		stderr = true,
+		env = { JDK_JAVA_OPTIONS = "--enable-native-access=ALL-UNNAMED" },
 	})
 	if sign_result.code ~= 0 then
 		vim.notify("Failed to sign APK: " .. (sign_result.stderr or ""), vim.log.levels.ERROR)
 		return false
 	end
 
-	local verify_result = utils.async_system({ apksigner, "verify", signed_apk })
+	local verify_result = utils.async_system({ apksigner, "verify", signed_apk }, {
+		env = { JDK_JAVA_OPTIONS = "--enable-native-access=ALL-UNNAMED" },
+	})
 	if verify_result.code ~= 0 then
 		vim.notify("APK signature verification failed: " .. (verify_result.stderr or ""), vim.log.levels.ERROR)
 		return false
