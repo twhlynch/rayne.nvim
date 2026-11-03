@@ -558,4 +558,15 @@ function M.upload_quest_build()
 	end)
 end
 
+function M.uninstall()
+	utils.async(function()
+		local package_name = build_config.get_package_name()
+		if not package_name then
+			return
+		end
+
+		adb.uninstall(package_name)
+	end)
+end
+
 return M

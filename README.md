@@ -13,6 +13,7 @@ Tooling for using nvim for [Rayne](https://github.com/Überpixel/Rayne) projects
 - Bump VERSION, commit, and tag tool
 - Build and package release mode
 - Upload quest apk
+- Uninstall current installed APK
 
 ## Usage
 
@@ -37,6 +38,7 @@ return {
     { "<leader>RA", function() require("rayne.macos").attach() end, desc = "MacOS: attach" },
     { "<leader>RG", function() require("rayne.macos").generate() end, desc = "MacOS: generate" },
 
+    { "<leader>Rx", function() require("rayne.android").uninstall() end, desc = "Uninstall APK" },
     { "<leader>Ru", function() require("rayne.android").upload_quest_build() end, desc = "Upload quest build" },
     { "<leader>Rv", function() require("rayne.tools").bump_version() end, desc = "Bump VERSION" },
   },
